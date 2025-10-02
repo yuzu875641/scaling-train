@@ -1,14 +1,11 @@
 // api/proxy.js
 
-// Vercel/Node.js環境で動作するサーバーレス関数
 export default async function (req, res) {
-    // GETメソッドのチェック
     if (req.method !== 'GET') {
         res.status(405).send('Method Not Allowed');
         return;
     }
 
-    // クエリパラメータからプロキシ先のURLを取得
     const targetUrl = req.query.url;
 
     if (!targetUrl || typeof targetUrl !== 'string') {
@@ -17,40 +14,60 @@ export default async function (req, res) {
     }
 
     try {
+        // クライアントのリクエストヘッダーから、プロキシ先に渡すヘッダーを構築
+        const headersToForward = {};
+        
+        // 転送すべきでないヘッダーのリスト（プロキシの動作を妨げるもの）
+        const forbiddenHeaders = [
+            'host', 
+            'connection', 
+            'content-length', 
+            'transfer-encoding',
+            'expect',
+            'te',
+            'upgrade',
+            'keep-alive'
+        ];
+
+        // クライアントから受け取った全てのヘッダーを処理
+        for (const key in req.headers) {
+            const lowerKey = key.toLowerCase();
+            if (!forbiddenHeaders.includes(lowerKey)) {
+                // User-Agentを含む、許可されたヘッダーを全て転送
+                headersToForward[lowerKey] = req.headers[key];
+            }
+        }
+        
+        // **Rangeヘッダーは動画のシークに不可欠なので、確実に含めます**
+        if (req.headers['range']) {
+            headersToForward['range'] = req.headers['range'];
+        }
+        
+
         // 外部URLにリクエストを送信
-        // Node.jsの標準fetchはリダイレクトを自動で追跡します
-        const response = await fetch(targetUrl);
+        const response = await fetch(targetUrl, {
+            headers: headersToForward,
+        });
 
         if (!response.ok) {
             // 外部リソースがエラーを返した場合
-            res.status(response.status).send(`External resource error: ${response.statusText}`);
+            res.status(response.status).send(`External resource error: ${response.statusText} from target server.`);
             return;
         }
 
-        // --- ヘッダーのコピー ---
-        // 動画ストリームに必要なヘッダーを外部レスポンスからコピー
-        const headersToCopy = [
-            'content-type', 
-            'content-length', 
-            'accept-ranges', 
-            'cache-control',
-            // 他に必要なヘッダーがあれば追加
-        ];
-
-        headersToCopy.forEach(header => {
-            const value = response.headers.get(header);
-            if (value) {
-                res.setHeader(header, value);
+        // --- ヘッダーのコピー (外部レスポンス -> クライアント) ---
+        // 外部サーバーからのレスポンスヘッダーをクライアントに全てコピー
+        for (const [key, value] of response.headers.entries()) {
+            // transfer-encodingなど、Node/Vercelが自動で扱うべきヘッダーは除外
+            if (!forbiddenHeaders.includes(key.toLowerCase())) {
+                res.setHeader(key, value);
             }
-        });
-
+        }
+        
         // --- ストリーム処理 ---
-        // ステータスコードを設定
         res.status(response.status);
 
-        // 応答ストリームをクライアントに書き込む
         if (response.body) {
-            // response.bodyはNode.jsのReadableStream
             for await (const chunk of response.body) {
                 res.write(chunk);
             }
