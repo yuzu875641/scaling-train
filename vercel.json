@@ -1,13 +1,8 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
       "source": "/proxy",
-      "destination": "https://woke-proxy.poketube.fun/companion/latest_version"
-    },
-    {
-      "source": "/proxy/:path*",
-      "destination": "https://woke-proxy.poketube.fun/companion/latest_version/:path*"
+      "destination": "/api/proxy"
     }
   ]
 }
