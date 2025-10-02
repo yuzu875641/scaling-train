@@ -1,4 +1,4 @@
-// api/proxy.js
+// api/proxy.js (最終修正版)
 
 export default async function (req, res) {
     if (req.method !== 'GET') {
@@ -14,51 +14,44 @@ export default async function (req, res) {
     }
 
     try {
-        // クライアントのリクエストヘッダーから、プロキシ先に渡すヘッダーを構築
         const headersToForward = {};
         
-        // 転送すべきでないヘッダーのリスト（プロキシの動作を妨げるもの）
+        // プロキシの動作を妨げる、または不正な値になるヘッダーをリスト化
         const forbiddenHeaders = [
-            'host', 
-            'connection', 
-            'content-length', 
-            'transfer-encoding',
-            'expect',
-            'te',
-            'upgrade',
-            'keep-alive'
+            'host', 'connection', 'content-length', 
+            'transfer-encoding', 'expect', 'te', 'upgrade', 'keep-alive',
+            'referer' // Refererは独自に設定するため一旦除外
         ];
 
-        // クライアントから受け取った全てのヘッダーを処理
+        // クライアントから受け取ったヘッダーをすべて転送
         for (const key in req.headers) {
             const lowerKey = key.toLowerCase();
             if (!forbiddenHeaders.includes(lowerKey)) {
-                // User-Agentを含む、許可されたヘッダーを全て転送
                 headersToForward[lowerKey] = req.headers[key];
             }
         }
         
-        // **Rangeヘッダーは動画のシークに不可欠なので、確実に含めます**
+        // ★★★ 必須の追加対策: Refererヘッダーを設定 ★★★
+        // 外部サーバーは、自分自身のドメインからのリクエストであると期待する可能性がある
+        // 外部サービスのベースURLを設定することで、リファラーチェックを回避
+        headersToForward['referer'] = 'https://woke-proxy.poketube.fun/';
+        // Rangeヘッダーは動画のシークに必須
         if (req.headers['range']) {
             headersToForward['range'] = req.headers['range'];
         }
         
 
-        // 外部URLにリクエストを送信
         const response = await fetch(targetUrl, {
             headers: headersToForward,
         });
 
         if (!response.ok) {
-            // 外部リソースがエラーを返した場合
             res.status(response.status).send(`External resource error: ${response.statusText} from target server.`);
             return;
         }
 
-        // --- ヘッダーのコピー (外部レスポンス -> クライアント) ---
-        // 外部サーバーからのレスポンスヘッダーをクライアントに全てコピー
+        // --- レスポンスヘッダーのコピー ---
         for (const [key, value] of response.headers.entries()) {
-            // transfer-encodingなど、Node/Vercelが自動で扱うべきヘッダーは除外
             if (!forbiddenHeaders.includes(key.toLowerCase())) {
                 res.setHeader(key, value);
             }
