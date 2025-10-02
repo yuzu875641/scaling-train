@@ -1,0 +1,12 @@
+{
+  "name": "vercel-video-proxy",
+  "version": "1.0.0",
+  "description": "Vercel proxy for video content",
+  "main": "api/proxy.js",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.1"
+  }
+}
